@@ -94,9 +94,57 @@ async function dailySummary(client: Client): Promise<void> {
   }
 }
 
+async function weeklySummary(client: Client): Promise<void> {
+  const now = DateTime.now().setZone(env.TIMEZONE);
+  const weekStart = now.startOf("week");
+  const weekEnd = now.endOf("week");
+
+  const entries = await prisma.timeEntry.findMany({
+    where: {
+      status: "CLOSED",
+      clockOutAt: {
+        gte: weekStart.toJSDate(),
+        lte: weekEnd.toJSDate()
+      }
+    },
+    include: { employee: true }
+  });
+
+  if (entries.length === 0) {
+    return;
+  }
+
+  const totals = new Map<string, { name: string; minutes: number }>();
+  for (const entry of entries) {
+    const key = entry.employee.discordUserId;
+    const current = totals.get(key) ?? { name: entry.employee.displayName, minutes: 0 };
+    totals.set(key, { name: current.name, minutes: current.minutes + (entry.durationMinutes ?? 0) });
+  }
+
+  const lines = Array.from(totals.values()).map(
+    (item) => `- ${item.name} -> ${durationToHuman(item.minutes)}`
+  );
+
+  const summaryEmbed = new EmbedBuilder()
+    .setColor(Colors.DarkBlue)
+    .setTitle("Weekly Timesheet Summary")
+    .setDescription(lines.join("\n"))
+    .setFooter({ text: `Saptamana: ${formatDate(weekStart.toJSDate(), env.TIMEZONE)} - ${formatDate(weekEnd.toJSDate(), env.TIMEZONE)}` })
+    .setTimestamp();
+
+  const summaryChannel = await client.channels.fetch(env.TIMESHEET_SUMMARY_CHANNEL_ID);
+  if (summaryChannel && summaryChannel.isTextBased() && !summaryChannel.isDMBased()) {
+    await summaryChannel.send({ embeds: [summaryEmbed] });
+  }
+}
+
 export function startTimesheetScheduler(client: Client): void {
   cron.schedule("0 0 * * *", async () => {
     await autoClockOut(client);
     await dailySummary(client);
+  }, { timezone: env.TIMEZONE });
+
+  cron.schedule("0 19 * * 0", async () => {
+    await weeklySummary(client);
   }, { timezone: env.TIMEZONE });
 }

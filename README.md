@@ -119,6 +119,7 @@ Posteaza panelul de pontaj in canalul configurat (`TIMESHEET_CHANNEL_ID`).
 3. Bot creeaza un `TimeEntry` cu status `OPEN`.
 4. La urmatorul `Clock`, botul inchide sesiunea, calculeaza durata si logheaza intervalul in canalul de arhiva pontaj.
 5. La ora 00:00, botul face auto clock-out pentru orice sesiune deschisa si trimite rezumatul zilnic in canalul de summary.
+6. Duminica la 19:00, botul trimite rezumatul saptamanal (Nume -> ore state) in acelasi canal de summary.
 
 ## Deploy Railway (free)
 
