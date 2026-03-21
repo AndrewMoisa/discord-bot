@@ -515,7 +515,7 @@ async function handleClockToggle(client: Client, interaction: ButtonInteraction)
       .setTimestamp();
 
     await upsertTimesheetArchiveMessage(client, created.id, null, logEmbed);
-    await interaction.reply({ content: `Clock In registered at ${formatTime(created.clockInAt, env.TIMEZONE)}.` });
+    await interaction.reply({ content: `Clock In registered at ${formatTime(created.clockInAt, env.TIMEZONE)}.`, ephemeral: true });
     const timesheetChannel = asTextChannel(await guild.channels.fetch(env.TIMESHEET_CHANNEL_ID));
     if (timesheetChannel) {
       await updateTimesheetPanel(client, timesheetChannel);
@@ -546,7 +546,7 @@ async function handleClockToggle(client: Client, interaction: ButtonInteraction)
     .setTimestamp();
 
   await upsertTimesheetArchiveMessage(client, closedEntry.id, closedEntry.sourceMessageId ?? null, logEmbed);
-  await interaction.reply({ content: `Clock Out registered. Total: ${durationToHuman(durationMinutes)}.` });
+  await interaction.reply({ content: `Clock Out registered. Total: ${durationToHuman(durationMinutes)}.`, ephemeral: true });
 
   const timesheetChannel = asTextChannel(await guild.channels.fetch(env.TIMESHEET_CHANNEL_ID));
   if (timesheetChannel) {
