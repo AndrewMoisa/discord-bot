@@ -2,16 +2,16 @@ import "dotenv/config";
 import { z } from "zod";
 
 const envSchema = z.object({
-  DISCORD_TOKEN: z.string().min(1),
-  CLIENT_ID: z.string().min(1),
+  BOT_TOKEN: z.string().min(1),
+  APP_ID: z.string().min(1),
   GUILD_ID: z.string().min(1),
   DATABASE_URL: z.string().min(1),
-  ROLE_EMPLOYEE_ID: z.string().min(1),
-  CHANNEL_HIRING_ID: z.string().min(1),
-  CHANNEL_APPROVED_CV_ID: z.string().min(1),
-  CHANNEL_TIMESHEET_ID: z.string().min(1),
-  CHANNEL_TIMESHEET_ARCHIVE_ID: z.string().min(1),
-  CHANNEL_LOGS_ID: z.string().min(1),
+  EMPLOYEE_ROLE_ID: z.string().min(1),
+  CV_CHANNEL_ID: z.string().min(1),
+  CV_APPROVED_CHANNEL_ID: z.string().min(1),
+  TIMESHEET_CHANNEL_ID: z.string().min(1),
+  TIMESHEET_ARCHIVE_CHANNEL_ID: z.string().min(1),
+  LOG_CHANNEL_ID: z.string().min(1),
   MANAGER_ROLE_IDS: z.string().min(1),
   TIMEZONE: z.string().default("Europe/Bucharest")
 });

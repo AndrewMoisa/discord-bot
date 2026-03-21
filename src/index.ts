@@ -49,7 +49,7 @@ client.on(Events.InteractionCreate, async (interaction: Interaction) => {
 });
 
 async function main(): Promise<void> {
-  await client.login(env.DISCORD_TOKEN);
+  await client.login(env.BOT_TOKEN);
 }
 
 main().catch(async (error) => {

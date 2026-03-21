@@ -52,16 +52,16 @@ npm run dev
 
 ## Variabile de mediu
 
-- `DISCORD_TOKEN` token bot Discord
-- `CLIENT_ID` application client id Discord
+- `BOT_TOKEN` token bot Discord
+- `APP_ID` application client id Discord
 - `GUILD_ID` server id unde inregistrezi comenzile
 - `DATABASE_URL` conexiune PostgreSQL
-- `ROLE_EMPLOYEE_ID` rolul atribuit la aprobare
-- `CHANNEL_HIRING_ID` canal pentru cereri de angajare
-- `CHANNEL_APPROVED_CV_ID` canal pentru CV-uri aprobate (embed complet)
-- `CHANNEL_TIMESHEET_ID` canal unde se posteaza panelul de pontaj
-- `CHANNEL_TIMESHEET_ARCHIVE_ID` canal unde se posteaza logurile de pontaj
-- `CHANNEL_LOGS_ID` canal de audit/loguri
+- `EMPLOYEE_ROLE_ID` rolul atribuit la aprobare
+- `CV_CHANNEL_ID` canal pentru cereri de angajare
+- `CV_APPROVED_CHANNEL_ID` canal pentru CV-uri aprobate (embed complet)
+- `TIMESHEET_CHANNEL_ID` canal unde se posteaza panelul de pontaj
+- `TIMESHEET_ARCHIVE_CHANNEL_ID` canal unde se posteaza logurile de pontaj
+- `LOG_CHANNEL_ID` canal de audit/loguri
 - `MANAGER_ROLE_IDS` lista role id separate prin virgula pentru acces la hire/review
 - `TIMEZONE` implicit `Europe/Bucharest`
 
@@ -92,7 +92,7 @@ Rezultat:
 
 Doar manager/admin.
 
-Posteaza panelul de pontaj in canalul configurat (`CHANNEL_TIMESHEET_ID`).
+Posteaza panelul de pontaj in canalul configurat (`TIMESHEET_CHANNEL_ID`).
 
 ## Flux angajare
 
@@ -103,7 +103,7 @@ Posteaza panelul de pontaj in canalul configurat (`CHANNEL_TIMESHEET_ID`).
 
 - status cerere devine `APPROVED`
 - utilizatorul este creat/actualizat in tabela `Employee`
-- botul atribuie `ROLE_EMPLOYEE_ID`
+- botul atribuie `EMPLOYEE_ROLE_ID`
 - se publica log in canalul de loguri
 
 5. La `Reject`:

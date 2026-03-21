@@ -44,7 +44,7 @@ function buildTimesheetButtons(): ActionRowBuilder<ButtonBuilder> {
 }
 
 async function postLog(client: Client, embed: EmbedBuilder): Promise<void> {
-  const logsChannel = asTextChannel(await client.channels.fetch(env.CHANNEL_LOGS_ID));
+  const logsChannel = asTextChannel(await client.channels.fetch(env.LOG_CHANNEL_ID));
   if (!logsChannel) {
     return;
   }
@@ -53,7 +53,7 @@ async function postLog(client: Client, embed: EmbedBuilder): Promise<void> {
 }
 
 async function postApprovedCv(client: Client, embed: EmbedBuilder): Promise<void> {
-  const approvedChannel = asTextChannel(await client.channels.fetch(env.CHANNEL_APPROVED_CV_ID));
+  const approvedChannel = asTextChannel(await client.channels.fetch(env.CV_APPROVED_CHANNEL_ID));
   if (!approvedChannel) {
     return;
   }
@@ -62,7 +62,7 @@ async function postApprovedCv(client: Client, embed: EmbedBuilder): Promise<void
 }
 
 async function postTimesheetArchive(client: Client, embed: EmbedBuilder): Promise<void> {
-  const archiveChannel = asTextChannel(await client.channels.fetch(env.CHANNEL_TIMESHEET_ARCHIVE_ID));
+  const archiveChannel = asTextChannel(await client.channels.fetch(env.TIMESHEET_ARCHIVE_CHANNEL_ID));
   if (!archiveChannel) {
     return;
   }
@@ -171,7 +171,7 @@ export async function handleChatCommand(_client: Client, interaction: ChatInputC
   }
 
   if (interaction.commandName === "setup-timesheet") {
-    const timesheetChannel = asTextChannel(await guild.channels.fetch(env.CHANNEL_TIMESHEET_ID));
+    const timesheetChannel = asTextChannel(await guild.channels.fetch(env.TIMESHEET_CHANNEL_ID));
 
     if (!timesheetChannel) {
       await interaction.reply({ content: "Timesheet channel is not configured correctly.", ephemeral: true });
@@ -282,7 +282,7 @@ async function handleHireReview(client: Client, interaction: ButtonInteraction, 
   let roleAssignError: string | null = null;
   if (targetMember) {
     try {
-      await targetMember.roles.add(env.ROLE_EMPLOYEE_ID);
+      await targetMember.roles.add(env.EMPLOYEE_ROLE_ID);
     } catch (error) {
       roleAssignError = error instanceof Error ? error.message : "Unknown error";
     }
@@ -292,7 +292,7 @@ async function handleHireReview(client: Client, interaction: ButtonInteraction, 
 
   let approveMessage = `<@${request.targetUserId}>'s submission has been accepted successfully by <@${interaction.user.id}> | ${interaction.user.username}`;
   if (roleAssignError) {
-    approveMessage += `\n\n🔴 Couldn't assign role <@&${env.ROLE_EMPLOYEE_ID}> due to the following reason: ${roleAssignError}`;
+    approveMessage += `\n\n🔴 Couldn't assign role <@&${env.EMPLOYEE_ROLE_ID}> due to the following reason: ${roleAssignError}`;
   }
 
   await postApprovedCv(
@@ -342,7 +342,7 @@ export async function handleModalSubmit(interaction: ModalSubmitInteraction): Pr
   });
 
   const guild = interaction.guild;
-  const hiringChannel = asTextChannel(await guild.channels.fetch(env.CHANNEL_HIRING_ID));
+  const hiringChannel = asTextChannel(await guild.channels.fetch(env.CV_CHANNEL_ID));
   if (!hiringChannel) {
     await interaction.reply({ content: "Hiring channel is not configured correctly.", ephemeral: true });
     return;
@@ -380,7 +380,7 @@ async function handleClockToggle(client: Client, interaction: ButtonInteraction)
   }
 
   const member = requireGuildMember(interaction.member as GuildMember);
-  if (!member.roles.cache.has(env.ROLE_EMPLOYEE_ID)) {
+  if (!member.roles.cache.has(env.EMPLOYEE_ROLE_ID)) {
     await interaction.reply({ content: "You do not have permission to use the timesheet.", ephemeral: true });
     return;
   }
