@@ -46,7 +46,19 @@ async function autoClockOut(client: Client): Promise<void> {
 
     const archiveChannel = await client.channels.fetch(env.TIMESHEET_ARCHIVE_CHANNEL_ID);
     if (archiveChannel && archiveChannel.isTextBased() && !archiveChannel.isDMBased()) {
-      await archiveChannel.send({ embeds: [logEmbed] });
+      if (entry.sourceMessageId) {
+        const existing = await archiveChannel.messages.fetch(entry.sourceMessageId).catch(() => null);
+        if (existing) {
+          await existing.edit({ embeds: [logEmbed] });
+          continue;
+        }
+      }
+
+      const created = await archiveChannel.send({ embeds: [logEmbed] });
+      await prisma.timeEntry.update({
+        where: { id: entry.id },
+        data: { sourceMessageId: created.id }
+      });
     }
   }
 }

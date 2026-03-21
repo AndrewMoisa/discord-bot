@@ -74,6 +74,34 @@ async function postTimesheetArchive(client: Client, embed: EmbedBuilder): Promis
   await archiveChannel.send({ embeds: [embed] });
 }
 
+async function upsertTimesheetArchiveMessage(
+  client: Client,
+  entryId: string,
+  messageId: string | null,
+  embed: EmbedBuilder
+): Promise<string | null> {
+  const archiveChannel = asTextChannel(await client.channels.fetch(env.TIMESHEET_ARCHIVE_CHANNEL_ID));
+  if (!archiveChannel) {
+    return null;
+  }
+
+  if (messageId) {
+    const existing = await archiveChannel.messages.fetch(messageId).catch(() => null);
+    if (existing) {
+      await existing.edit({ embeds: [embed] });
+      return existing.id;
+    }
+  }
+
+  const created = await archiveChannel.send({ embeds: [embed] });
+  await prisma.timeEntry.update({
+    where: { id: entryId },
+    data: { sourceMessageId: created.id }
+  });
+
+  return created.id;
+}
+
 function buildCvEmbed(request: {
   fullName: string;
   cnp: string;
@@ -467,10 +495,20 @@ async function handleClockToggle(client: Client, interaction: ButtonInteraction)
       data: {
         employeeId: employee.id,
         status: TimeEntryStatus.OPEN,
-        sourceMessageId: interaction.message.id
+        sourceMessageId: null
       }
     });
 
+    const logEmbed = new EmbedBuilder()
+      .setColor(Colors.Blurple)
+      .setTitle("Clock In")
+      .addFields(
+        { name: "Employee", value: `<@${interaction.user.id}>`, inline: true },
+        { name: "At", value: formatTime(created.clockInAt, env.TIMEZONE), inline: true }
+      )
+      .setTimestamp();
+
+    await upsertTimesheetArchiveMessage(client, created.id, null, logEmbed);
     await interaction.reply({ content: `Clock In registered at ${formatTime(created.clockInAt, env.TIMEZONE)}.` });
     const timesheetChannel = asTextChannel(await interaction.guild.channels.fetch(env.TIMESHEET_CHANNEL_ID));
     if (timesheetChannel) {
@@ -501,7 +539,7 @@ async function handleClockToggle(client: Client, interaction: ButtonInteraction)
     )
     .setTimestamp();
 
-  await postTimesheetArchive(client, logEmbed);
+  await upsertTimesheetArchiveMessage(client, closedEntry.id, closedEntry.sourceMessageId ?? null, logEmbed);
   await interaction.reply({ content: `Clock Out registered. Total: ${durationToHuman(durationMinutes)}.` });
 
   const timesheetChannel = asTextChannel(await interaction.guild.channels.fetch(env.TIMESHEET_CHANNEL_ID));
