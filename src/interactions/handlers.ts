@@ -45,7 +45,7 @@ function buildTimesheetButtons(): ActionRowBuilder<ButtonBuilder> {
 
 let lastTimesheetPanelMessageId: string | null = null;
 const clockCooldowns = new Map<string, number>();
-const CLOCK_COOLDOWN_MS = 3000;
+const CLOCK_COOLDOWN_MS = 60000;
 
 async function postLog(client: Client, embed: EmbedBuilder): Promise<void> {
   const logsChannel = asTextChannel(await client.channels.fetch(env.LOG_CHANNEL_ID));
