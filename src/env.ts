@@ -8,7 +8,9 @@ const envSchema = z.object({
   DATABASE_URL: z.string().min(1),
   ROLE_EMPLOYEE_ID: z.string().min(1),
   CHANNEL_HIRING_ID: z.string().min(1),
+  CHANNEL_APPROVED_CV_ID: z.string().min(1),
   CHANNEL_TIMESHEET_ID: z.string().min(1),
+  CHANNEL_TIMESHEET_ARCHIVE_ID: z.string().min(1),
   CHANNEL_LOGS_ID: z.string().min(1),
   MANAGER_ROLE_IDS: z.string().min(1),
   TIMEZONE: z.string().default("Europe/Bucharest")

@@ -2,7 +2,7 @@ import { Client, Events, GatewayIntentBits, Interaction } from "discord.js";
 import { registerGuildCommands } from "./commands/registerCommands";
 import { prisma } from "./db";
 import { env } from "./env";
-import { handleButton, handleChatCommand } from "./interactions/handlers";
+import { handleButton, handleChatCommand, handleModalSubmit } from "./interactions/handlers";
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers]
@@ -28,6 +28,11 @@ client.on(Events.InteractionCreate, async (interaction: Interaction) => {
 
     if (interaction.isButton()) {
       await handleButton(client, interaction);
+      return;
+    }
+
+    if (interaction.isModalSubmit()) {
+      await handleModalSubmit(interaction);
     }
   } catch (error) {
     console.error("Interaction handling error", error);

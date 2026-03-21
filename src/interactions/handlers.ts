@@ -11,12 +11,16 @@ import {
   GuildBasedChannel,
   GuildTextBasedChannel,
   GuildMember,
+  ModalBuilder,
+  ModalSubmitInteraction,
+  TextInputBuilder,
+  TextInputStyle,
 } from "discord.js";
 import { HireRequestStatus, TimeEntryStatus } from "@prisma/client";
 import { prisma } from "../db";
 import { env } from "../env";
 import { isManager } from "../utils/permissions";
-import { durationToHuman, formatDiscordDate, formatRange } from "../utils/time";
+import { durationToHuman, formatRange } from "../utils/time";
 
 function asTextChannel(channel: Channel | GuildBasedChannel | null): GuildTextBasedChannel | null {
   if (!channel || !channel.isTextBased() || channel.isDMBased()) {
@@ -35,8 +39,7 @@ function buildHireButtons(requestId: string): ActionRowBuilder<ButtonBuilder> {
 
 function buildTimesheetButtons(): ActionRowBuilder<ButtonBuilder> {
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
-    new ButtonBuilder().setCustomId("time:in").setLabel("Clock In").setStyle(ButtonStyle.Success),
-    new ButtonBuilder().setCustomId("time:out").setLabel("Clock Out").setStyle(ButtonStyle.Secondary)
+    new ButtonBuilder().setCustomId("time:toggle").setLabel("Clock").setStyle(ButtonStyle.Success)
   );
 }
 
@@ -47,6 +50,47 @@ async function postLog(client: Client, embed: EmbedBuilder): Promise<void> {
   }
 
   await logsChannel.send({ embeds: [embed] });
+}
+
+async function postApprovedCv(client: Client, embed: EmbedBuilder): Promise<void> {
+  const approvedChannel = asTextChannel(await client.channels.fetch(env.CHANNEL_APPROVED_CV_ID));
+  if (!approvedChannel) {
+    return;
+  }
+
+  await approvedChannel.send({ embeds: [embed] });
+}
+
+async function postTimesheetArchive(client: Client, embed: EmbedBuilder): Promise<void> {
+  const archiveChannel = asTextChannel(await client.channels.fetch(env.CHANNEL_TIMESHEET_ARCHIVE_ID));
+  if (!archiveChannel) {
+    return;
+  }
+
+  await archiveChannel.send({ embeds: [embed] });
+}
+
+function buildCvEmbed(request: {
+  fullName: string;
+  cnp: string;
+  phone: string;
+  idCardUrl: string;
+  referredBy: string;
+  targetUserId: string;
+}): EmbedBuilder {
+  return new EmbedBuilder()
+    .setColor(Colors.Blue)
+    .setTitle("Depunere CV Application Submitted")
+    .setDescription(`<@${request.targetUserId}>'s 'Depunere CV' Application Submitted`)
+    .addFields(
+      { name: "1. · Nume & Prenume:", value: request.fullName, inline: false },
+      { name: "2. · CNP:", value: request.cnp, inline: false },
+      { name: "3. · Numar de telefon:", value: request.phone, inline: false },
+      { name: "4. · Poza cu buletinul [LINK]", value: `[LINK](${request.idCardUrl})`, inline: false },
+      { name: "5. · De cine ai fost adus?", value: request.referredBy, inline: false }
+    )
+    .setFooter({ text: "Status: PENDING" })
+    .setTimestamp();
 }
 
 function requireGuildMember(member: GuildMember | null): GuildMember {
@@ -77,56 +121,52 @@ export async function handleChatCommand(_client: Client, interaction: ChatInputC
     return;
   }
 
-  if (interaction.commandName === "hire") {
+  if (interaction.commandName === "cv") {
     const target = interaction.options.getUser("user", true);
-    const fullName = interaction.options.getString("full_name", true);
-    const position = interaction.options.getString("position", true);
-    const department = interaction.options.getString("department", false);
-    const notes = interaction.options.getString("notes", false);
 
-    const request = await prisma.hireRequest.create({
-      data: {
-        requesterId: interaction.user.id,
-        targetUserId: target.id,
-        fullName,
-        position,
-        department,
-        notes
-      }
-    });
+    const modal = new ModalBuilder()
+      .setCustomId(`cv:submit:${target.id}`)
+      .setTitle("Depunere CV");
 
-    const hiringChannel = asTextChannel(await guild.channels.fetch(env.CHANNEL_HIRING_ID));
-    if (!hiringChannel) {
-      await interaction.reply({ content: "Hiring channel is not configured correctly.", ephemeral: true });
-      return;
-    }
+    const fullNameInput = new TextInputBuilder()
+      .setCustomId("full_name")
+      .setLabel("Nume & Prenume")
+      .setRequired(true)
+      .setStyle(TextInputStyle.Short);
 
-    const embed = new EmbedBuilder()
-      .setColor(Colors.Blue)
-      .setTitle("New Hiring Request")
-      .addFields(
-        { name: "Request ID", value: request.id, inline: false },
-        { name: "Target User", value: `<@${target.id}>`, inline: true },
-        { name: "Full Name", value: fullName, inline: true },
-        { name: "Position", value: position, inline: true },
-        { name: "Department", value: department ?? "N/A", inline: true },
-        { name: "Requested By", value: `<@${interaction.user.id}>`, inline: true },
-        { name: "Notes", value: notes ?? "N/A", inline: false }
-      )
-      .setFooter({ text: "Status: PENDING" })
-      .setTimestamp();
+    const cnpInput = new TextInputBuilder()
+      .setCustomId("cnp")
+      .setLabel("CNP")
+      .setRequired(true)
+      .setStyle(TextInputStyle.Short);
 
-    const message = await hiringChannel.send({
-      embeds: [embed],
-      components: [buildHireButtons(request.id)]
-    });
+    const phoneInput = new TextInputBuilder()
+      .setCustomId("phone")
+      .setLabel("Numar de telefon")
+      .setRequired(true)
+      .setStyle(TextInputStyle.Short);
 
-    await prisma.hireRequest.update({
-      where: { id: request.id },
-      data: { messageId: message.id }
-    });
+    const idCardInput = new TextInputBuilder()
+      .setCustomId("id_card_url")
+      .setLabel("Poza cu buletinul (URL)")
+      .setRequired(true)
+      .setStyle(TextInputStyle.Short);
 
-    await interaction.reply({ content: `Hiring request created: ${request.id}`, ephemeral: true });
+    const referredByInput = new TextInputBuilder()
+      .setCustomId("referred_by")
+      .setLabel("De cine ai fost adus?")
+      .setRequired(true)
+      .setStyle(TextInputStyle.Short);
+
+    modal.addComponents(
+      new ActionRowBuilder<TextInputBuilder>().addComponents(fullNameInput),
+      new ActionRowBuilder<TextInputBuilder>().addComponents(cnpInput),
+      new ActionRowBuilder<TextInputBuilder>().addComponents(phoneInput),
+      new ActionRowBuilder<TextInputBuilder>().addComponents(idCardInput),
+      new ActionRowBuilder<TextInputBuilder>().addComponents(referredByInput)
+    );
+
+    await interaction.showModal(modal);
     return;
   }
 
@@ -141,7 +181,7 @@ export async function handleChatCommand(_client: Client, interaction: ChatInputC
     const panelEmbed = new EmbedBuilder()
       .setColor(Colors.Green)
       .setTitle("Timesheet Panel")
-      .setDescription("Use Clock In at start of work and Clock Out when your shift ends.")
+      .setDescription("Apasa Clock pentru a porni sau opri pontajul.")
       .setTimestamp();
 
     await timesheetChannel.send({ embeds: [panelEmbed], components: [buildTimesheetButtons()] });
@@ -189,17 +229,8 @@ async function handleHireReview(client: Client, interaction: ButtonInteraction, 
       }
     });
 
-    const rejectEmbed = new EmbedBuilder()
-      .setColor(Colors.Red)
-      .setTitle("Hiring Request Rejected")
-      .addFields(
-        { name: "Request ID", value: request.id, inline: false },
-        { name: "Target User", value: `<@${request.targetUserId}>`, inline: true },
-        { name: "Reviewed By", value: `<@${interaction.user.id}>`, inline: true }
-      )
-      .setTimestamp();
-
-    await postLog(client, rejectEmbed);
+    const rejectMessage = `<@${request.targetUserId}>'s submission has been rejected by <@${interaction.user.id}> | ${interaction.user.username}`;
+    await postLog(client, new EmbedBuilder().setColor(Colors.Red).setDescription(rejectMessage));
     await interaction.update({ content: `Request ${request.id} rejected by <@${interaction.user.id}>.`, components: [] });
     return;
   }
@@ -228,9 +259,9 @@ async function handleHireReview(client: Client, interaction: ButtonInteraction, 
       create: {
         discordUserId: request.targetUserId,
         displayName: request.fullName,
-        position: request.position,
-        department: request.department,
-        notes: request.notes,
+        position: "Armurier",
+        department: null,
+        notes: null,
         hiredById: request.requesterId,
         hiredAt: approvedAt,
         roleAssignedAt: approvedAt,
@@ -238,9 +269,9 @@ async function handleHireReview(client: Client, interaction: ButtonInteraction, 
       },
       update: {
         displayName: request.fullName,
-        position: request.position,
-        department: request.department,
-        notes: request.notes,
+        position: "Armurier",
+        department: null,
+        notes: null,
         isActive: true,
         roleAssignedAt: approvedAt
       }
@@ -248,28 +279,109 @@ async function handleHireReview(client: Client, interaction: ButtonInteraction, 
   });
 
   const targetMember = await guild.members.fetch(request.targetUserId).catch(() => null);
+  let roleAssignError: string | null = null;
   if (targetMember) {
-    await targetMember.roles.add(env.ROLE_EMPLOYEE_ID).catch(() => null);
+    try {
+      await targetMember.roles.add(env.ROLE_EMPLOYEE_ID);
+    } catch (error) {
+      roleAssignError = error instanceof Error ? error.message : "Unknown error";
+    }
+  } else {
+    roleAssignError = "Member not found in guild";
   }
 
-  const approveEmbed = new EmbedBuilder()
-    .setColor(Colors.Green)
-    .setTitle("Hiring Request Approved")
-    .addFields(
-      { name: "Request ID", value: request.id, inline: false },
-      { name: "Employee", value: `<@${request.targetUserId}>`, inline: true },
-      { name: "Reviewed By", value: `<@${interaction.user.id}>`, inline: true },
-      { name: "Approved At", value: formatDiscordDate(approvedAt), inline: false }
-    )
-    .setTimestamp();
+  let approveMessage = `<@${request.targetUserId}>'s submission has been accepted successfully by <@${interaction.user.id}> | ${interaction.user.username}`;
+  if (roleAssignError) {
+    approveMessage += `\n\n🔴 Couldn't assign role <@&${env.ROLE_EMPLOYEE_ID}> due to the following reason: ${roleAssignError}`;
+  }
 
-  await postLog(client, approveEmbed);
+  await postApprovedCv(
+    client,
+    buildCvEmbed({
+      fullName: request.fullName,
+      cnp: request.cnp,
+      phone: request.phone,
+      idCardUrl: request.idCardUrl,
+      referredBy: request.referredBy,
+      targetUserId: request.targetUserId
+    }).setFooter({ text: "Status: APPROVED" })
+  );
+
+  await postLog(client, new EmbedBuilder().setColor(Colors.Green).setDescription(approveMessage));
   await interaction.update({ content: `Request ${request.id} approved by <@${interaction.user.id}>.`, components: [] });
 }
 
-async function handleClockIn(client: Client, interaction: ButtonInteraction): Promise<void> {
+export async function handleModalSubmit(interaction: ModalSubmitInteraction): Promise<void> {
   if (!interaction.inGuild()) {
     await interaction.reply({ content: "This action can only be used in a server.", ephemeral: true });
+    return;
+  }
+
+  const [prefix, action, targetUserId] = interaction.customId.split(":");
+  if (prefix !== "cv" || action !== "submit" || !targetUserId) {
+    await interaction.reply({ content: "Invalid modal submission.", ephemeral: true });
+    return;
+  }
+
+  const fullName = interaction.fields.getTextInputValue("full_name").trim();
+  const cnp = interaction.fields.getTextInputValue("cnp").trim();
+  const phone = interaction.fields.getTextInputValue("phone").trim();
+  const idCardUrl = interaction.fields.getTextInputValue("id_card_url").trim();
+  const referredBy = interaction.fields.getTextInputValue("referred_by").trim();
+
+  const request = await prisma.hireRequest.create({
+    data: {
+      requesterId: interaction.user.id,
+      targetUserId,
+      fullName,
+      cnp,
+      phone,
+      idCardUrl,
+      referredBy
+    }
+  });
+
+  const guild = interaction.guild;
+  const hiringChannel = asTextChannel(await guild.channels.fetch(env.CHANNEL_HIRING_ID));
+  if (!hiringChannel) {
+    await interaction.reply({ content: "Hiring channel is not configured correctly.", ephemeral: true });
+    return;
+  }
+
+  const embed = new EmbedBuilder()
+    .setColor(Colors.Blue);
+
+  const cvEmbed = buildCvEmbed({
+    fullName,
+    cnp,
+    phone,
+    idCardUrl,
+    referredBy,
+    targetUserId
+  });
+
+  const message = await hiringChannel.send({
+    embeds: [cvEmbed],
+    components: [buildHireButtons(request.id)]
+  });
+
+  await prisma.hireRequest.update({
+    where: { id: request.id },
+    data: { messageId: message.id }
+  });
+
+  await interaction.reply({ content: `CV submission created: ${request.id}`, ephemeral: true });
+}
+
+async function handleClockToggle(client: Client, interaction: ButtonInteraction): Promise<void> {
+  if (!interaction.inGuild()) {
+    await interaction.reply({ content: "This action can only be used in a server.", ephemeral: true });
+    return;
+  }
+
+  const member = requireGuildMember(interaction.member as GuildMember);
+  if (!member.roles.cache.has(env.ROLE_EMPLOYEE_ID)) {
+    await interaction.reply({ content: "You do not have permission to use the timesheet.", ephemeral: true });
     return;
   }
 
@@ -284,51 +396,16 @@ async function handleClockIn(client: Client, interaction: ButtonInteraction): Pr
     where: { employeeId: employee.id, status: TimeEntryStatus.OPEN }
   });
 
-  if (openEntry) {
-    await interaction.reply({ content: "You already have an active clock-in. Use Clock Out first.", ephemeral: true });
-    return;
-  }
-
-  const created = await prisma.timeEntry.create({
-    data: {
-      employeeId: employee.id,
-      status: TimeEntryStatus.OPEN,
-      sourceMessageId: interaction.message.id
-    }
-  });
-
-  const logEmbed = new EmbedBuilder()
-    .setColor(Colors.Blurple)
-    .setTitle("Clock In")
-    .addFields(
-      { name: "Employee", value: `<@${interaction.user.id}>`, inline: true },
-      { name: "At", value: formatDiscordDate(created.clockInAt), inline: true }
-    )
-    .setTimestamp();
-
-  await postLog(client, logEmbed);
-  await interaction.reply({ content: "Clock In registered.", ephemeral: true });
-}
-
-async function handleClockOut(client: Client, interaction: ButtonInteraction): Promise<void> {
-  if (!interaction.inGuild()) {
-    await interaction.reply({ content: "This action can only be used in a server.", ephemeral: true });
-    return;
-  }
-
-  const employee = await prisma.employee.findUnique({ where: { discordUserId: interaction.user.id } });
-  if (!employee || !employee.isActive) {
-    await interaction.reply({ content: "You are not an active employee.", ephemeral: true });
-    return;
-  }
-
-  const openEntry = await prisma.timeEntry.findFirst({
-    where: { employeeId: employee.id, status: TimeEntryStatus.OPEN },
-    orderBy: { clockInAt: "desc" }
-  });
-
   if (!openEntry) {
-    await interaction.reply({ content: "You do not have an active clock-in.", ephemeral: true });
+    const created = await prisma.timeEntry.create({
+      data: {
+        employeeId: employee.id,
+        status: TimeEntryStatus.OPEN,
+        sourceMessageId: interaction.message.id
+      }
+    });
+
+    await interaction.reply({ content: `Clock In registered at ${created.clockInAt.toLocaleString()}.`, ephemeral: true });
     return;
   }
 
@@ -354,7 +431,7 @@ async function handleClockOut(client: Client, interaction: ButtonInteraction): P
     )
     .setTimestamp();
 
-  await postLog(client, logEmbed);
+  await postTimesheetArchive(client, logEmbed);
   await interaction.reply({ content: `Clock Out registered. Total: ${durationToHuman(durationMinutes)}.`, ephemeral: true });
 }
 
@@ -366,12 +443,7 @@ export async function handleButton(client: Client, interaction: ButtonInteractio
     return;
   }
 
-  if (group === "time" && action === "in") {
-    await handleClockIn(client, interaction);
-    return;
-  }
-
-  if (group === "time" && action === "out") {
-    await handleClockOut(client, interaction);
+  if (group === "time" && action === "toggle") {
+    await handleClockToggle(client, interaction);
   }
 }

@@ -41,9 +41,10 @@ model HireRequest {
   requesterId  String
   targetUserId String
   fullName     String
-  position     String
-  department   String?
-  notes        String?
+  cnp          String            @default("")
+  phone        String            @default("")
+  idCardUrl    String            @default("")
+  referredBy   String            @default("")
   status       HireRequestStatus @default(PENDING)
   reviewedById String?
   reviewedAt   DateTime?

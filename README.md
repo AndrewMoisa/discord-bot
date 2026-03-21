@@ -3,11 +3,11 @@
 Bot Discord pentru management semi-automat de angajari si pontaj:
 
 - Flux angajare: managerul ruleaza comanda de angajare, botul posteaza cererea in canalul de hiring, manager/admin aproba sau respinge, iar la aprobare botul atribuie rolul de angajat.
-- Flux pontaj: botul publica un panel cu butoane Clock In si Clock Out. La Clock Out se calculeaza durata si se posteaza log in canalul dedicat.
+- Flux pontaj: botul publica un panel cu un buton Clock (toggle). La Clock Out se calculeaza durata si se posteaza log in canalul de arhiva pontaj.
 
 ## Functionalitati
 
-- Slash command `hire` cu campuri pentru user, nume complet, pozitie, departament, note.
+- Slash command `cv` cu formular UI pentru depunere CV.
 - Slash command `setup-timesheet` pentru panelul de pontaj.
 - Butoane `Approve/Reject` pentru cereri de angajare.
 - Atribuire automata a rolului de angajat la aprobare.
@@ -58,24 +58,30 @@ npm run dev
 - `DATABASE_URL` conexiune PostgreSQL
 - `ROLE_EMPLOYEE_ID` rolul atribuit la aprobare
 - `CHANNEL_HIRING_ID` canal pentru cereri de angajare
+- `CHANNEL_APPROVED_CV_ID` canal pentru CV-uri aprobate (embed complet)
 - `CHANNEL_TIMESHEET_ID` canal unde se posteaza panelul de pontaj
+- `CHANNEL_TIMESHEET_ARCHIVE_ID` canal unde se posteaza logurile de pontaj
 - `CHANNEL_LOGS_ID` canal de audit/loguri
 - `MANAGER_ROLE_IDS` lista role id separate prin virgula pentru acces la hire/review
 - `TIMEZONE` implicit `Europe/Bucharest`
 
 ## Comenzi bot
 
-### `/hire`
+### `/cv`
 
 Doar manager/admin.
 
 Parametri:
 
-- `user` membrul care urmeaza sa fie angajat
-- `full_name` numele complet
-- `position` functia
-- `department` optional
-- `notes` optional
+- `user` membrul pentru care se completeaza CV-ul
+
+Formular UI (modal) cu campuri:
+
+- Nume & Prenume
+- CNP
+- Numar de telefon
+- Poza cu buletinul (URL)
+- De cine ai fost adus?
 
 Rezultat:
 
@@ -90,7 +96,7 @@ Posteaza panelul de pontaj in canalul configurat (`CHANNEL_TIMESHEET_ID`).
 
 ## Flux angajare
 
-1. Manager ruleaza `/hire`.
+1. Manager ruleaza `/cv`.
 2. Bot creeaza cererea si o posteaza in canalul de hiring.
 3. Manager/admin apasa `Approve` sau `Reject`.
 4. La `Approve`:
@@ -107,10 +113,10 @@ Posteaza panelul de pontaj in canalul configurat (`CHANNEL_TIMESHEET_ID`).
 
 ## Flux pontaj
 
-1. Angajatul apasa `Clock In`.
-2. Bot valideaza ca userul este angajat activ si nu are sesiune deschisa.
+1. Angajatul apasa `Clock`.
+2. Bot valideaza ca userul are rolul de angajat si nu are sesiune deschisa.
 3. Bot creeaza un `TimeEntry` cu status `OPEN`.
-4. La `Clock Out`, botul inchide sesiunea, calculeaza durata si logheaza intervalul.
+4. La urmatorul `Clock`, botul inchide sesiunea, calculeaza durata si logheaza intervalul in canalul de arhiva pontaj.
 
 ## Deploy Railway (free)
 
