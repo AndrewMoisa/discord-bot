@@ -465,6 +465,12 @@ async function handleClockToggle(client: Client, interaction: ButtonInteraction)
     return;
   }
 
+  const guild = interaction.guild;
+  if (!guild) {
+    await interaction.reply({ content: "Guild not available for this action.", ephemeral: true });
+    return;
+  }
+
   const member = requireGuildMember(interaction.member as GuildMember);
   if (!member.roles.cache.has(env.EMPLOYEE_ROLE_ID)) {
     await interaction.reply({ content: "You do not have permission to use the timesheet.", ephemeral: true });
@@ -510,7 +516,7 @@ async function handleClockToggle(client: Client, interaction: ButtonInteraction)
 
     await upsertTimesheetArchiveMessage(client, created.id, null, logEmbed);
     await interaction.reply({ content: `Clock In registered at ${formatTime(created.clockInAt, env.TIMEZONE)}.` });
-    const timesheetChannel = asTextChannel(await interaction.guild.channels.fetch(env.TIMESHEET_CHANNEL_ID));
+    const timesheetChannel = asTextChannel(await guild.channels.fetch(env.TIMESHEET_CHANNEL_ID));
     if (timesheetChannel) {
       await updateTimesheetPanel(client, timesheetChannel);
     }
@@ -542,7 +548,7 @@ async function handleClockToggle(client: Client, interaction: ButtonInteraction)
   await upsertTimesheetArchiveMessage(client, closedEntry.id, closedEntry.sourceMessageId ?? null, logEmbed);
   await interaction.reply({ content: `Clock Out registered. Total: ${durationToHuman(durationMinutes)}.` });
 
-  const timesheetChannel = asTextChannel(await interaction.guild.channels.fetch(env.TIMESHEET_CHANNEL_ID));
+  const timesheetChannel = asTextChannel(await guild.channels.fetch(env.TIMESHEET_CHANNEL_ID));
   if (timesheetChannel) {
     await updateTimesheetPanel(client, timesheetChannel);
   }
