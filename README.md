@@ -61,6 +61,7 @@ npm run dev
 - `CV_APPROVED_CHANNEL_ID` canal pentru CV-uri aprobate (embed complet)
 - `TIMESHEET_CHANNEL_ID` canal unde se posteaza panelul de pontaj
 - `TIMESHEET_ARCHIVE_CHANNEL_ID` canal unde se posteaza logurile de pontaj
+- `TIMESHEET_SUMMARY_CHANNEL_ID` canal pentru rezumatul zilnic de pontaj
 - `LOG_CHANNEL_ID` canal de audit/loguri
 - `MANAGER_ROLE_IDS` lista role id separate prin virgula pentru acces la hire/review
 - `TIMEZONE` implicit `Europe/Bucharest`
@@ -117,6 +118,7 @@ Posteaza panelul de pontaj in canalul configurat (`TIMESHEET_CHANNEL_ID`).
 2. Bot valideaza ca userul are rolul de angajat si nu are sesiune deschisa.
 3. Bot creeaza un `TimeEntry` cu status `OPEN`.
 4. La urmatorul `Clock`, botul inchide sesiunea, calculeaza durata si logheaza intervalul in canalul de arhiva pontaj.
+5. La ora 00:00, botul face auto clock-out pentru orice sesiune deschisa si trimite rezumatul zilnic in canalul de summary.
 
 ## Deploy Railway (free)
 

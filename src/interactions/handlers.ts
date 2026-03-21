@@ -20,7 +20,7 @@ import { HireRequestStatus, TimeEntryStatus } from "@prisma/client";
 import { prisma } from "../db";
 import { env } from "../env";
 import { isManager } from "../utils/permissions";
-import { durationToHuman, formatRange } from "../utils/time";
+import { durationToHuman, formatDate, formatRange, formatTime } from "../utils/time";
 
 function asTextChannel(channel: Channel | GuildBasedChannel | null): GuildTextBasedChannel | null {
   if (!channel || !channel.isTextBased() || channel.isDMBased()) {
@@ -42,6 +42,10 @@ function buildTimesheetButtons(): ActionRowBuilder<ButtonBuilder> {
     new ButtonBuilder().setCustomId("time:toggle").setLabel("Clock").setStyle(ButtonStyle.Success)
   );
 }
+
+let lastTimesheetPanelMessageId: string | null = null;
+const clockCooldowns = new Map<string, number>();
+const CLOCK_COOLDOWN_MS = 3000;
 
 async function postLog(client: Client, embed: EmbedBuilder): Promise<void> {
   const logsChannel = asTextChannel(await client.channels.fetch(env.LOG_CHANNEL_ID));
@@ -91,6 +95,55 @@ function buildCvEmbed(request: {
     )
     .setFooter({ text: "Status: PENDING" })
     .setTimestamp();
+}
+
+async function loadTimesheetPanelMessage(channel: GuildTextBasedChannel): Promise<string | null> {
+  if (lastTimesheetPanelMessageId) {
+    return lastTimesheetPanelMessageId;
+  }
+
+  const messages = await channel.messages.fetch({ limit: 20 });
+  const panelMessage = messages.find((message) =>
+    message.author.id === channel.client.user?.id &&
+    message.embeds.some((embed) => embed.title === "Timesheet Panel")
+  );
+
+  if (!panelMessage) {
+    return null;
+  }
+
+  lastTimesheetPanelMessageId = panelMessage.id;
+  return panelMessage.id;
+}
+
+async function updateTimesheetPanel(client: Client, channel: GuildTextBasedChannel): Promise<void> {
+  const messageId = await loadTimesheetPanelMessage(channel);
+  if (!messageId) {
+    return;
+  }
+
+  const openEntries = await prisma.timeEntry.findMany({
+    where: { status: TimeEntryStatus.OPEN },
+    include: { employee: true },
+    orderBy: { clockInAt: "asc" }
+  });
+
+  const lines = openEntries.map((entry) =>
+    `- <@${entry.employee.discordUserId}> | ${formatTime(entry.clockInAt, env.TIMEZONE)}`
+  );
+
+  const description = lines.length > 0
+    ? `Pontaj activ:\n${lines.join("\n")}`
+    : "Nu exista pontaj activ.";
+
+  const panelEmbed = new EmbedBuilder()
+    .setColor(Colors.Green)
+    .setTitle("Timesheet Panel")
+    .setDescription(description)
+    .setFooter({ text: `Actualizat: ${formatDate(new Date(), env.TIMEZONE)}` })
+    .setTimestamp();
+
+  await channel.messages.edit(messageId, { embeds: [panelEmbed], components: [buildTimesheetButtons()] });
 }
 
 function requireGuildMember(member: GuildMember | null): GuildMember {
@@ -181,10 +234,11 @@ export async function handleChatCommand(_client: Client, interaction: ChatInputC
     const panelEmbed = new EmbedBuilder()
       .setColor(Colors.Green)
       .setTitle("Timesheet Panel")
-      .setDescription("Apasa Clock pentru a porni sau opri pontajul.")
+      .setDescription("Nu exista pontaj activ.")
       .setTimestamp();
 
-    await timesheetChannel.send({ embeds: [panelEmbed], components: [buildTimesheetButtons()] });
+    const message = await timesheetChannel.send({ embeds: [panelEmbed], components: [buildTimesheetButtons()] });
+    lastTimesheetPanelMessageId = message.id;
     await interaction.reply({ content: "Timesheet panel posted.", ephemeral: true });
   }
 }
@@ -389,6 +443,14 @@ async function handleClockToggle(client: Client, interaction: ButtonInteraction)
     return;
   }
 
+  const now = Date.now();
+  const lastClick = clockCooldowns.get(interaction.user.id) ?? 0;
+  if (now - lastClick < CLOCK_COOLDOWN_MS) {
+    await interaction.reply({ content: "Please wait a few seconds before clicking again.", ephemeral: true });
+    return;
+  }
+  clockCooldowns.set(interaction.user.id, now);
+
   const employee = await prisma.employee.findUnique({ where: { discordUserId: interaction.user.id } });
 
   if (!employee || !employee.isActive) {
@@ -409,7 +471,11 @@ async function handleClockToggle(client: Client, interaction: ButtonInteraction)
       }
     });
 
-    await interaction.reply({ content: `Clock In registered at ${created.clockInAt.toLocaleString()}.`, ephemeral: true });
+    await interaction.reply({ content: `Clock In registered at ${formatTime(created.clockInAt, env.TIMEZONE)}.` });
+    const timesheetChannel = asTextChannel(await interaction.guild.channels.fetch(env.TIMESHEET_CHANNEL_ID));
+    if (timesheetChannel) {
+      await updateTimesheetPanel(client, timesheetChannel);
+    }
     return;
   }
 
@@ -436,7 +502,12 @@ async function handleClockToggle(client: Client, interaction: ButtonInteraction)
     .setTimestamp();
 
   await postTimesheetArchive(client, logEmbed);
-  await interaction.reply({ content: `Clock Out registered. Total: ${durationToHuman(durationMinutes)}.`, ephemeral: true });
+  await interaction.reply({ content: `Clock Out registered. Total: ${durationToHuman(durationMinutes)}.` });
+
+  const timesheetChannel = asTextChannel(await interaction.guild.channels.fetch(env.TIMESHEET_CHANNEL_ID));
+  if (timesheetChannel) {
+    await updateTimesheetPanel(client, timesheetChannel);
+  }
 }
 
 export async function handleButton(client: Client, interaction: ButtonInteraction): Promise<void> {

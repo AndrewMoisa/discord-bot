@@ -11,6 +11,7 @@ const envSchema = z.object({
   CV_APPROVED_CHANNEL_ID: z.string().min(1),
   TIMESHEET_CHANNEL_ID: z.string().min(1),
   TIMESHEET_ARCHIVE_CHANNEL_ID: z.string().min(1),
+  TIMESHEET_SUMMARY_CHANNEL_ID: z.string().min(1),
   LOG_CHANNEL_ID: z.string().min(1),
   MANAGER_ROLE_IDS: z.string().min(1),
   TIMEZONE: z.string().default("Europe/Bucharest")

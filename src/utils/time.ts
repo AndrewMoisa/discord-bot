@@ -10,6 +10,14 @@ export function formatRange(clockInAt: Date, clockOutAt: Date, timezone: string)
   return `${start} - ${end}`;
 }
 
+export function formatTime(clockInAt: Date, timezone: string): string {
+  return DateTime.fromJSDate(clockInAt).setZone(timezone).toFormat("HH:mm");
+}
+
+export function formatDate(date: Date, timezone: string): string {
+  return DateTime.fromJSDate(date).setZone(timezone).toFormat("dd.MM.yyyy");
+}
+
 export function durationToHuman(totalMinutes: number): string {
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
