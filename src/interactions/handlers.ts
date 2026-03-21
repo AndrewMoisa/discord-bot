@@ -342,6 +342,10 @@ export async function handleModalSubmit(interaction: ModalSubmitInteraction): Pr
   });
 
   const guild = interaction.guild;
+  if (!guild) {
+    await interaction.reply({ content: "Guild not available for this action.", ephemeral: true });
+    return;
+  }
   const hiringChannel = asTextChannel(await guild.channels.fetch(env.CV_CHANNEL_ID));
   if (!hiringChannel) {
     await interaction.reply({ content: "Hiring channel is not configured correctly.", ephemeral: true });
