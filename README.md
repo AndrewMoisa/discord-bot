@@ -1,14 +1,17 @@
 # Discord HR Manager Bot
 
-Bot Discord pentru management semi-automat de angajari si pontaj:
+Bot Discord pentru management semi-automat de angajari si pontaj, cu suport multi-guild:
 
 - Flux angajare: managerul ruleaza comanda de angajare, botul posteaza cererea in canalul de hiring, manager/admin aproba sau respinge, iar la aprobare botul atribuie rolul de angajat.
 - Flux pontaj: botul publica un panel cu un buton Clock (toggle). La Clock Out se calculeaza durata si se posteaza log in canalul de arhiva pontaj.
+- Izolare date: fiecare guild are schema PostgreSQL dedicata (`g_<guildId>`), iar setarile de guild se tin in tabele publice.
 
 ## Functionalitati
 
 - Slash command `cv` cu formular UI pentru depunere CV.
 - Slash command `setup-timesheet` pentru panelul de pontaj.
+- Slash command `tenant-setup` pentru setup schema + config pe guild.
+- Slash command `tenant-status` pentru verificarea statusului de setup pe guild.
 - Butoane `Approve/Reject` pentru cereri de angajare.
 - Atribuire automata a rolului de angajat la aprobare.
 - Clock in/out cu regula: un singur clock-in activ per angajat.
@@ -54,17 +57,32 @@ npm run dev
 
 - `BOT_TOKEN` token bot Discord
 - `APP_ID` application client id Discord
-- `GUILD_ID` server id unde inregistrezi comenzile
 - `DATABASE_URL` conexiune PostgreSQL
-- `EMPLOYEE_ROLE_ID` rolul atribuit la aprobare
-- `CV_CHANNEL_ID` canal pentru cereri de angajare
-- `CV_APPROVED_CHANNEL_ID` canal pentru CV-uri aprobate (embed complet)
-- `TIMESHEET_CHANNEL_ID` canal unde se posteaza panelul de pontaj
-- `TIMESHEET_ARCHIVE_CHANNEL_ID` canal unde se posteaza logurile de pontaj
-- `TIMESHEET_SUMMARY_CHANNEL_ID` canal pentru rezumatul zilnic de pontaj
-- `LOG_CHANNEL_ID` canal de audit/loguri
-- `MANAGER_ROLE_IDS` lista role id separate prin virgula pentru acces la hire/review
-- `TIMEZONE` implicit `Europe/Bucharest`
+- `BOT_OWNER_IDS` user ids separate prin virgula (doar owner poate rula setup)
+- `CONTROL_PANEL_PORT` port pentru API panel (default `8787`)
+- `PANEL_API_TOKEN` token pentru autentificarea request-urilor catre API panel
+- `PANEL_PROXY_SHARED_SECRET` secret optional suplimentar pentru request-urile venite prin proxy-ul Cloudflare
+- `PANEL_PROXY_ONLY` daca este `true`, API-ul panel accepta doar request-uri cu metadata de proxy (`X-Panel-Actor-Id` + `X-Request-Id`)
+- `PANEL_ALLOWED_ORIGINS` lista de origini permise pentru panel (separate prin virgula)
+- `DEFAULT_*` fallback optional pentru bootstrap config (vezi `.env.example`)
+
+## Control Panel API (owner-only)
+
+Backend-ul include acum un API simplu pentru panel web. Toate endpoint-urile (in afara de health) necesita header:
+
+- `X-Panel-Token: <PANEL_API_TOKEN>`
+
+UI panel este disponibil la:
+
+- `/panel/` pe acelasi host/port cu API-ul
+
+Endpoint-uri:
+
+- `GET /api/health`
+- `GET /api/guilds`
+- `GET /api/guilds/:guildId`
+- `PUT /api/guilds/:guildId/config`
+- `POST /api/guilds/:guildId/provision`
 
 ## Comenzi bot
 
@@ -93,7 +111,35 @@ Rezultat:
 
 Doar manager/admin.
 
-Posteaza panelul de pontaj in canalul configurat (`TIMESHEET_CHANNEL_ID`).
+Posteaza panelul de pontaj in canalul configurat pentru guild in `GuildConfig.timesheetChannelId`.
+
+### `/tenant-setup`
+
+Doar owner bot.
+
+Provisioneaza tenantul guild-ului curent:
+
+- creeaza/actualizeaza `GuildTenant` si `GuildConfig`
+- creeaza schema dedicata `g_<guildId>`
+- creeaza tabelele tenant (`Employee`, `HireRequest`, `TimeEntry`) in schema dedicata
+
+Parametri:
+
+- `employee_role_id`
+- `cv_channel_id`
+- `cv_approved_channel_id`
+- `timesheet_channel_id`
+- `timesheet_archive_channel_id`
+- `timesheet_summary_channel_id`
+- `log_channel_id`
+- `manager_role_ids` (lista separata prin virgula)
+- `timezone` (optional)
+
+### `/tenant-status`
+
+Doar owner bot.
+
+Afiseaza statusul tenantului pentru guild-ul curent.
 
 ## Flux angajare
 

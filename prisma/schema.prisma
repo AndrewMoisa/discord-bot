@@ -72,3 +72,47 @@ model TimeEntry {
   @@index([employeeId, status])
   @@index([clockInAt])
 }
+
+model GuildTenant {
+  id             String      @id @default(cuid())
+  guildId        String      @unique
+  guildName      String
+  schemaName     String      @unique
+  isProvisioned  Boolean     @default(false)
+  schemaVersion  Int         @default(0)
+  lastError      String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  config         GuildConfig?
+  auditLogs      SetupAudit[]
+}
+
+model GuildConfig {
+  id                        String      @id @default(cuid())
+  guildTenantId             String      @unique
+  guildTenant               GuildTenant @relation(fields: [guildTenantId], references: [id], onDelete: Cascade)
+  employeeRoleId            String
+  cvChannelId               String
+  cvApprovedChannelId       String
+  timesheetChannelId        String
+  timesheetArchiveChannelId String
+  timesheetSummaryChannelId String
+  logChannelId              String
+  managerRoleIds            String[]
+  timezone                  String      @default("Europe/Bucharest")
+  createdAt                 DateTime    @default(now())
+  updatedAt                 DateTime    @updatedAt
+}
+
+model SetupAudit {
+  id            String      @id @default(cuid())
+  guildTenantId String
+  guildTenant   GuildTenant @relation(fields: [guildTenantId], references: [id], onDelete: Cascade)
+  actorUserId   String
+  action        String
+  status        String
+  details       String?
+  createdAt     DateTime    @default(now())
+
+  @@index([guildTenantId, createdAt])
+}
