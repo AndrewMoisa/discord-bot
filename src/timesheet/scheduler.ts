@@ -6,14 +6,8 @@ import { prisma } from "../db";
 import { env } from "../env";
 import { durationToHuman, formatDate, formatRange } from "../utils/time";
 
-type AutoClockOutMode = "all-open" | "morning-window";
-
-function autoClockOutReason(mode: AutoClockOutMode): string {
-  if (mode === "morning-window") {
-    return "Inchidere automata la 11:00 (program de dimineata).";
-  }
-
-  return "Inchidere automata la miezul noptii.";
+function autoClockOutReason(): string {
+  return "Inchidere automata la 23:00 (inchidere shop).";
 }
 
 async function notifyAutoClockOutUser(client: Client, discordUserId: string, entry: {
@@ -34,27 +28,11 @@ async function notifyAutoClockOutUser(client: Client, discordUserId: string, ent
   ).catch(() => null);
 }
 
-async function autoClockOut(client: Client, mode: AutoClockOutMode): Promise<void> {
+async function autoClockOut(client: Client): Promise<void> {
   const now = DateTime.now().setZone(env.TIMEZONE);
-  const morningCutoff = now.set({
-    hour: env.CLOCK_IN_CUTOFF_HOUR,
-    minute: env.CLOCK_IN_CUTOFF_MINUTE,
-    second: 0,
-    millisecond: 0
-  });
-
-  const where = mode === "morning-window"
-    ? {
-        status: "OPEN" as const,
-        clockInAt: {
-          gte: now.startOf("day").toJSDate(),
-          lt: morningCutoff.toJSDate()
-        }
-      }
-    : { status: "OPEN" as const };
 
   const openEntries = await prisma.timeEntry.findMany({
-    where,
+    where: { status: "OPEN" as const },
     include: { employee: true },
     orderBy: { clockInAt: "asc" }
   });
@@ -64,7 +42,7 @@ async function autoClockOut(client: Client, mode: AutoClockOutMode): Promise<voi
   }
 
   const clockOutAt = now.toJSDate();
-  const reason = autoClockOutReason(mode);
+  const reason = autoClockOutReason();
 
   for (const entry of openEntries) {
     const elapsedMs = Math.max(60000, clockOutAt.getTime() - entry.clockInAt.getTime());
@@ -146,9 +124,9 @@ async function runScheduledJob(name: string, job: () => Promise<void>): Promise<
 
 async function dailySummary(client: Client): Promise<void> {
   const now = DateTime.now().setZone(env.TIMEZONE);
-  const yesterdayStart = now.minus({ days: 1 }).startOf("day");
-  const yesterdayEnd = now.minus({ days: 1 }).endOf("day");
-  const summaryDate = yesterdayStart.toUTC().toJSDate();
+  const todayStart = now.startOf("day");
+  const todayEnd = now.endOf("day");
+  const summaryDate = todayStart.toUTC().toJSDate();
 
   const isReserved = await reserveDailySummary(summaryDate);
   if (!isReserved) {
@@ -160,8 +138,8 @@ async function dailySummary(client: Client): Promise<void> {
       where: {
         status: "CLOSED",
         clockOutAt: {
-          gte: yesterdayStart.toJSDate(),
-          lte: yesterdayEnd.toJSDate()
+          gte: todayStart.toJSDate(),
+          lte: todayEnd.toJSDate()
         }
       },
       include: { employee: true }
@@ -185,7 +163,7 @@ async function dailySummary(client: Client): Promise<void> {
       .setColor(Colors.Blurple)
       .setTitle("Raport Zilnic Pontaj")
       .setDescription(lines.join("\n"))
-        .setFooter({ text: `Data: ${formatDate(yesterdayStart.toJSDate(), env.TIMEZONE)} | Generat automat` })
+      .setFooter({ text: `Data: ${formatDate(todayStart.toJSDate(), env.TIMEZONE)} | Generat automat` })
       .setTimestamp();
 
     const summaryChannel = await client.channels.fetch(env.TIMESHEET_SUMMARY_CHANNEL_ID);
@@ -243,16 +221,15 @@ async function weeklySummary(client: Client): Promise<void> {
 }
 
 export function startTimesheetScheduler(client: Client): void {
-  cron.schedule("0 0 * * *", async () => {
-    await runScheduledJob("midnight-auto-close-and-daily-summary", async () => {
-      await autoClockOut(client, "all-open");
-      await dailySummary(client);
+  cron.schedule(`${env.AUTO_CLOCK_OUT_MINUTE} ${env.AUTO_CLOCK_OUT_HOUR} * * *`, async () => {
+    await runScheduledJob("shop-close-auto-clock-out", async () => {
+      await autoClockOut(client);
     });
   }, { timezone: env.TIMEZONE });
 
-  cron.schedule(`${env.MORNING_AUTO_CLOSE_MINUTE} ${env.MORNING_AUTO_CLOSE_HOUR} * * *`, async () => {
-    await runScheduledJob("morning-auto-close", async () => {
-      await autoClockOut(client, "morning-window");
+  cron.schedule(`${env.DAILY_SUMMARY_MINUTE} ${env.DAILY_SUMMARY_HOUR} * * *`, async () => {
+    await runScheduledJob("daily-summary", async () => {
+      await dailySummary(client);
     });
   }, { timezone: env.TIMEZONE });
 

@@ -153,14 +153,21 @@ async function consumeClockCooldown(interaction: ButtonInteraction): Promise<boo
 }
 
 function canClockInAt(now: DateTime): boolean {
-  const cutoff = now.set({
-    hour: env.CLOCK_IN_CUTOFF_HOUR,
-    minute: env.CLOCK_IN_CUTOFF_MINUTE,
+  const windowStart = now.set({
+    hour: env.CLOCK_IN_START_HOUR,
+    minute: env.CLOCK_IN_START_MINUTE,
+    second: 0,
+    millisecond: 0
+  });
+  const windowEnd = now.set({
+    hour: env.CLOCK_IN_END_HOUR,
+    minute: env.CLOCK_IN_END_MINUTE,
     second: 0,
     millisecond: 0
   });
 
-  return now <= cutoff;
+  // End is exclusive: 19:00 <= clock-in < 23:00.
+  return now >= windowStart && now < windowEnd;
 }
 
 async function handleClockIn(client: Client, interaction: ButtonInteraction): Promise<void> {
@@ -187,15 +194,21 @@ async function handleClockIn(client: Client, interaction: ButtonInteraction): Pr
 
   const now = DateTime.now().setZone(env.TIMEZONE);
   if (!canClockInAt(now)) {
-    const cutoffNow = now.set({
-      hour: env.CLOCK_IN_CUTOFF_HOUR,
-      minute: env.CLOCK_IN_CUTOFF_MINUTE,
+    const windowStart = now.set({
+      hour: env.CLOCK_IN_START_HOUR,
+      minute: env.CLOCK_IN_START_MINUTE,
+      second: 0,
+      millisecond: 0
+    });
+    const windowEnd = now.set({
+      hour: env.CLOCK_IN_END_HOUR,
+      minute: env.CLOCK_IN_END_MINUTE,
       second: 0,
       millisecond: 0
     });
 
     await interaction.reply({
-      content: `Programul de Clock In s-a incheiat la ${formatDiscordDate(cutoffNow.toJSDate())}. Daca este o exceptie, contacteaza un manager.`,
+      content: `Clock In este disponibil doar intre ${formatDiscordDate(windowStart.toJSDate())} si ${formatDiscordDate(windowEnd.toJSDate())}. Daca este o exceptie, contacteaza un manager.`,
       ephemeral: true
     });
     return;

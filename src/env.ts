@@ -15,10 +15,14 @@ const envSchema = z.object({
   LOG_CHANNEL_ID: z.string().min(1),
   MANAGER_ROLE_IDS: z.string().min(1),
   TIMEZONE: z.string().default("Europe/Bucharest"),
-  CLOCK_IN_CUTOFF_HOUR: z.coerce.number().int().min(0).max(23).default(11),
-  CLOCK_IN_CUTOFF_MINUTE: z.coerce.number().int().min(0).max(59).default(0),
-  MORNING_AUTO_CLOSE_HOUR: z.coerce.number().int().min(0).max(23).default(11),
-  MORNING_AUTO_CLOSE_MINUTE: z.coerce.number().int().min(0).max(59).default(0)
+  CLOCK_IN_START_HOUR: z.coerce.number().int().min(0).max(23).default(19),
+  CLOCK_IN_START_MINUTE: z.coerce.number().int().min(0).max(59).default(0),
+  CLOCK_IN_END_HOUR: z.coerce.number().int().min(0).max(23).default(23),
+  CLOCK_IN_END_MINUTE: z.coerce.number().int().min(0).max(59).default(0),
+  AUTO_CLOCK_OUT_HOUR: z.coerce.number().int().min(0).max(23).default(23),
+  AUTO_CLOCK_OUT_MINUTE: z.coerce.number().int().min(0).max(59).default(0),
+  DAILY_SUMMARY_HOUR: z.coerce.number().int().min(0).max(23).default(23),
+  DAILY_SUMMARY_MINUTE: z.coerce.number().int().min(0).max(59).default(5)
 });
 
 const parsedEnv = envSchema.safeParse(process.env);
