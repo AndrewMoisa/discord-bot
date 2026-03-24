@@ -14,7 +14,11 @@ const envSchema = z.object({
   TIMESHEET_SUMMARY_CHANNEL_ID: z.string().min(1),
   LOG_CHANNEL_ID: z.string().min(1),
   MANAGER_ROLE_IDS: z.string().min(1),
-  TIMEZONE: z.string().default("Europe/Bucharest")
+  TIMEZONE: z.string().default("Europe/Bucharest"),
+  CLOCK_IN_CUTOFF_HOUR: z.coerce.number().int().min(0).max(23).default(11),
+  CLOCK_IN_CUTOFF_MINUTE: z.coerce.number().int().min(0).max(59).default(0),
+  MORNING_AUTO_CLOSE_HOUR: z.coerce.number().int().min(0).max(23).default(11),
+  MORNING_AUTO_CLOSE_MINUTE: z.coerce.number().int().min(0).max(59).default(0)
 });
 
 const parsedEnv = envSchema.safeParse(process.env);

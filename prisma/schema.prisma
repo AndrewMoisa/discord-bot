@@ -72,3 +72,14 @@ model TimeEntry {
   @@index([employeeId, status])
   @@index([clockInAt])
 }
+
+model BotState {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+model DailySummaryRun {
+  summaryDate DateTime @id
+  createdAt   DateTime @default(now())
+}
