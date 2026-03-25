@@ -4,6 +4,8 @@ import { Prisma } from "@prisma/client";
 import { DateTime } from "luxon";
 import { prisma } from "../db";
 import { env } from "../env";
+import { asTextChannel } from "../interactions/utils";
+import { updateTimesheetPanel } from "../interactions/handlers/timesheet";
 import { durationToHuman, formatDate, formatRange } from "../utils/time";
 
 function autoClockOutReason(): string {
@@ -30,6 +32,7 @@ async function notifyAutoClockOutUser(client: Client, discordUserId: string, ent
 
 async function autoClockOut(client: Client): Promise<void> {
   const now = DateTime.now().setZone(env.TIMEZONE);
+  let didCloseAny = false;
 
   const openEntries = await prisma.timeEntry.findMany({
     where: { status: "OPEN" as const },
@@ -60,6 +63,8 @@ async function autoClockOut(client: Client): Promise<void> {
     if (closed.count === 0) {
       continue;
     }
+
+    didCloseAny = true;
 
     const logEmbed = new EmbedBuilder()
       .setColor(Colors.Gold)
@@ -95,6 +100,21 @@ async function autoClockOut(client: Client): Promise<void> {
       });
     }
   }
+
+  if (!didCloseAny) {
+    console.info("Auto clock-out completed with no state changes; skipping panel refresh.");
+    return;
+  }
+
+  const timesheetChannel = asTextChannel(await client.channels.fetch(env.TIMESHEET_CHANNEL_ID).catch(() => null));
+  if (!timesheetChannel) {
+    console.warn("Auto clock-out closed entries, but timesheet channel was unavailable for panel refresh.");
+    return;
+  }
+
+  await updateTimesheetPanel(client, timesheetChannel).catch((error) => {
+    console.error("Auto clock-out closed entries, but panel refresh failed.", error);
+  });
 }
 
 async function reserveDailySummary(summaryDate: Date): Promise<boolean> {

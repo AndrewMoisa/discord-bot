@@ -2,7 +2,7 @@ import { ButtonInteraction, ChatInputCommandInteraction, Client, GuildMember, Mo
 import { env } from "../env";
 import { isManager } from "../utils/permissions";
 import { handleCvCommand, handleCvModalSubmit, handleHireButton } from "./handlers/cv";
-import { handleSetupTimesheetCommand, handleTimesheetButton } from "./handlers/timesheet";
+import { handleRefreshTimesheetPanelCommand, handleSetupTimesheetCommand, handleTimesheetButton } from "./handlers/timesheet";
 import { requireGuildMember } from "./utils";
 
 export async function handleChatCommand(_client: Client, interaction: ChatInputCommandInteraction): Promise<void> {
@@ -32,6 +32,11 @@ export async function handleChatCommand(_client: Client, interaction: ChatInputC
 
   if (interaction.commandName === "setup-timesheet") {
     await handleSetupTimesheetCommand(interaction);
+    return;
+  }
+
+  if (interaction.commandName === "refresh-timesheet") {
+    await handleRefreshTimesheetPanelCommand(_client, interaction);
   }
 }
 

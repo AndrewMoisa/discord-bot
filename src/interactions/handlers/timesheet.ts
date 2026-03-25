@@ -72,10 +72,10 @@ async function loadTimesheetPanelMessage(channel: GuildTextBasedChannel): Promis
   return panelMessage.id;
 }
 
-async function updateTimesheetPanel(client: Client, channel: GuildTextBasedChannel): Promise<void> {
+export async function updateTimesheetPanel(client: Client, channel: GuildTextBasedChannel): Promise<boolean> {
   const messageId = await loadTimesheetPanelMessage(channel);
   if (!messageId) {
-    return;
+    return false;
   }
 
   const openEntries = await prisma.timeEntry.findMany({
@@ -100,6 +100,7 @@ async function updateTimesheetPanel(client: Client, channel: GuildTextBasedChann
     .setTimestamp();
 
   await channel.messages.edit(messageId, { embeds: [panelEmbed], components: [buildTimesheetButtons()] });
+  return true;
 }
 
 async function validateTimesheetAccess(interaction: ButtonInteraction): Promise<{ guild: NonNullable<ButtonInteraction["guild"]>; employeeId: string } | null> {
@@ -357,6 +358,31 @@ export async function handleSetupTimesheetCommand(interaction: ChatInputCommandI
   lastTimesheetPanelMessageId = message.id;
   await saveTimesheetPanelMessageId(message.id);
   await interaction.reply({ content: "Panoul de pontaj a fost publicat cu succes.", ephemeral: true });
+}
+
+export async function handleRefreshTimesheetPanelCommand(client: Client, interaction: ChatInputCommandInteraction): Promise<void> {
+  const guild = interaction.guild;
+  if (!guild) {
+    await interaction.reply({ content: "Guild not available for this command.", ephemeral: true });
+    return;
+  }
+
+  const timesheetChannel = asTextChannel(await guild.channels.fetch(env.TIMESHEET_CHANNEL_ID).catch(() => null));
+  if (!timesheetChannel) {
+    await interaction.reply({ content: "Timesheet channel is not configured correctly.", ephemeral: true });
+    return;
+  }
+
+  const refreshed = await updateTimesheetPanel(client, timesheetChannel);
+  if (!refreshed) {
+    await interaction.reply({
+      content: "Nu am gasit mesajul de panel. Ruleaza /setup-timesheet pentru a recrea panoul.",
+      ephemeral: true
+    });
+    return;
+  }
+
+  await interaction.reply({ content: "Panoul de pontaj a fost actualizat manual.", ephemeral: true });
 }
 
 export async function handleTimesheetButton(client: Client, interaction: ButtonInteraction): Promise<boolean> {
