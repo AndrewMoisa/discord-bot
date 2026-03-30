@@ -3,7 +3,7 @@ import { registerGuildCommands } from "./commands/registerCommands";
 import { prisma } from "./db";
 import { env } from "./env";
 import { handleButton, handleChatCommand, handleModalSubmit } from "./interactions/handlers";
-import { startTimesheetScheduler } from "./timesheet/scheduler";
+import { runStartupCatchUp, startTimesheetScheduler } from "./timesheet/scheduler";
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers]
@@ -20,6 +20,8 @@ client.once(Events.ClientReady, async (readyClient) => {
   }
 
   startTimesheetScheduler(client);
+
+  await runStartupCatchUp(client);
 });
 
 client.on(Events.InteractionCreate, async (interaction: Interaction) => {

@@ -240,6 +240,103 @@ async function weeklySummary(client: Client): Promise<void> {
   }
 }
 
+async function closeStaleEntries(client: Client): Promise<void> {
+  const now = DateTime.now().setZone(env.TIMEZONE);
+  const todayStart = now.startOf("day");
+  let didCloseAny = false;
+
+  const staleEntries = await prisma.timeEntry.findMany({
+    where: {
+      status: "OPEN" as const,
+      clockInAt: { lt: todayStart.toJSDate() }
+    },
+    include: { employee: true },
+    orderBy: { clockInAt: "asc" }
+  });
+
+  if (staleEntries.length === 0) {
+    return;
+  }
+
+  console.info(`Found ${staleEntries.length} stale OPEN entries from before today, closing them now.`);
+
+  const reason = "Inchidere automata de recuperare (pontaj ramas deschis din ziua precedenta).";
+
+  for (const entry of staleEntries) {
+    const entryDay = DateTime.fromJSDate(entry.clockInAt).setZone(env.TIMEZONE);
+    const scheduledCloseTime = entryDay.set({ hour: env.AUTO_CLOCK_OUT_HOUR, minute: env.AUTO_CLOCK_OUT_MINUTE, second: 0, millisecond: 0 });
+    const clockOutAt = scheduledCloseTime.toJSDate();
+
+    const elapsedMs = Math.max(60000, clockOutAt.getTime() - entry.clockInAt.getTime());
+    const durationMinutes = Math.round(elapsedMs / 60000);
+
+    const closed = await prisma.timeEntry.updateMany({
+      where: { id: entry.id, status: "OPEN" },
+      data: { clockOutAt, durationMinutes, status: "CLOSED" }
+    });
+
+    if (closed.count === 0) {
+      continue;
+    }
+
+    didCloseAny = true;
+
+    const logEmbed = new EmbedBuilder()
+      .setColor(Colors.Gold)
+      .setTitle("Auto Clock Out (Catch-Up)")
+      .addFields(
+        { name: "Employee", value: `<@${entry.employee.discordUserId}>`, inline: true },
+        { name: "Motiv", value: reason, inline: false },
+        { name: "Interval", value: formatRange(entry.clockInAt, clockOutAt, env.TIMEZONE), inline: false },
+        { name: "Total", value: `${durationToHuman(durationMinutes)} (${durationMinutes} min)`, inline: false }
+      )
+      .setTimestamp();
+
+    await notifyAutoClockOutUser(client, entry.employee.discordUserId, {
+      clockInAt: entry.clockInAt,
+      clockOutAt,
+      durationMinutes
+    }, reason);
+
+    const archiveChannel = await client.channels.fetch(env.TIMESHEET_ARCHIVE_CHANNEL_ID);
+    if (archiveChannel && archiveChannel.isTextBased() && !archiveChannel.isDMBased()) {
+      if (entry.sourceMessageId) {
+        const existing = await archiveChannel.messages.fetch(entry.sourceMessageId).catch(() => null);
+        if (existing) {
+          await existing.edit({ embeds: [logEmbed] });
+          continue;
+        }
+      }
+
+      const created = await archiveChannel.send({ embeds: [logEmbed] });
+      await prisma.timeEntry.update({
+        where: { id: entry.id },
+        data: { sourceMessageId: created.id }
+      });
+    }
+  }
+
+  if (!didCloseAny) {
+    return;
+  }
+
+  const timesheetChannel = asTextChannel(await client.channels.fetch(env.TIMESHEET_CHANNEL_ID).catch(() => null));
+  if (!timesheetChannel) {
+    console.warn("Stale entry catch-up closed entries, but timesheet channel was unavailable for panel refresh.");
+    return;
+  }
+
+  await updateTimesheetPanel(client, timesheetChannel).catch((error) => {
+    console.error("Stale entry catch-up closed entries, but panel refresh failed.", error);
+  });
+}
+
+export async function runStartupCatchUp(client: Client): Promise<void> {
+  await runScheduledJob("startup-stale-entry-catch-up", async () => {
+    await closeStaleEntries(client);
+  });
+}
+
 export function startTimesheetScheduler(client: Client): void {
   cron.schedule(`${env.AUTO_CLOCK_OUT_MINUTE} ${env.AUTO_CLOCK_OUT_HOUR} * * *`, async () => {
     await runScheduledJob("shop-close-auto-clock-out", async () => {
@@ -256,6 +353,13 @@ export function startTimesheetScheduler(client: Client): void {
   cron.schedule("0 19 * * 0", async () => {
     await runScheduledJob("weekly-summary", async () => {
       await weeklySummary(client);
+    });
+  }, { timezone: env.TIMEZONE });
+
+  // Safety net: check for stale entries every 30 minutes in case a nightly cron is missed (e.g. DST)
+  cron.schedule("*/30 * * * *", async () => {
+    await runScheduledJob("stale-entry-safety-net", async () => {
+      await closeStaleEntries(client);
     });
   }, { timezone: env.TIMEZONE });
 }
