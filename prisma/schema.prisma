@@ -73,6 +73,18 @@ model TimeEntry {
   @@index([clockInAt])
 }
 
+model TimeEntryAudit {
+  id              String   @id @default(cuid())
+  timeEntryId     String
+  editedById      String
+  fieldName       String
+  oldValue        String
+  newValue        String
+  createdAt       DateTime @default(now())
+
+  @@index([timeEntryId])
+}
+
 model BotState {
   key       String   @id
   value     String

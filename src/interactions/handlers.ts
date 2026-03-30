@@ -2,7 +2,8 @@ import { ButtonInteraction, ChatInputCommandInteraction, Client, GuildMember, Mo
 import { env } from "../env";
 import { isManager } from "../utils/permissions";
 import { handleCvCommand, handleCvModalSubmit, handleHireButton } from "./handlers/cv";
-import { handleRefreshTimesheetPanelCommand, handleSetupTimesheetCommand, handleTimesheetButton } from "./handlers/timesheet";
+import { handleDeactivateCommand } from "./handlers/employee";
+import { handleRefreshTimesheetPanelCommand, handleSetupTimesheetCommand, handleTimesheetButton, handleTimesheetEditCommand, handleTimesheetViewCommand } from "./handlers/timesheet";
 import { requireGuildMember } from "./utils";
 
 export async function handleChatCommand(_client: Client, interaction: ChatInputCommandInteraction): Promise<void> {
@@ -14,6 +15,12 @@ export async function handleChatCommand(_client: Client, interaction: ChatInputC
   const guild = interaction.guild;
   if (!guild) {
     await interaction.reply({ content: "Guild not available for this command.", ephemeral: true });
+    return;
+  }
+
+  // /timesheet can be used by any employee (self-view) or managers (view others)
+  if (interaction.commandName === "timesheet") {
+    await handleTimesheetViewCommand(interaction);
     return;
   }
 
@@ -37,6 +44,17 @@ export async function handleChatCommand(_client: Client, interaction: ChatInputC
 
   if (interaction.commandName === "refresh-timesheet") {
     await handleRefreshTimesheetPanelCommand(_client, interaction);
+    return;
+  }
+
+  if (interaction.commandName === "timesheet-edit") {
+    await handleTimesheetEditCommand(_client, interaction);
+    return;
+  }
+
+  if (interaction.commandName === "deactivate") {
+    await handleDeactivateCommand(_client, interaction);
+    return;
   }
 }
 

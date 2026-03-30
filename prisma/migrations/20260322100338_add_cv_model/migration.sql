@@ -1,0 +1,1 @@
+-- This migration was empty (model already existed)

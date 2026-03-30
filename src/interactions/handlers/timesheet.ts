@@ -16,6 +16,7 @@ import { durationToHuman, formatDate, formatDiscordDate, formatRange, formatTime
 import {
   asTextChannel,
   buildTimesheetButtons,
+  postLog,
   requireGuildMember,
   upsertTimesheetArchiveMessage,
 } from "../utils";
@@ -401,4 +402,258 @@ export async function handleTimesheetButton(client: Client, interaction: ButtonI
   }
 
   return false;
+}
+
+export async function handleTimesheetEditCommand(client: Client, interaction: ChatInputCommandInteraction): Promise<void> {
+  const targetUser = interaction.options.getUser("user", true);
+  const dateStr = interaction.options.getString("date");
+  const clockInStr = interaction.options.getString("clock-in");
+  const clockOutStr = interaction.options.getString("clock-out");
+  const shouldDelete = interaction.options.getBoolean("delete") ?? false;
+
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+  const employee = await prisma.employee.findUnique({ where: { discordUserId: targetUser.id } });
+  if (!employee) {
+    await interaction.editReply({ content: `<@${targetUser.id}> nu este un angajat inregistrat.` });
+    return;
+  }
+
+  const now = DateTime.now().setZone(env.TIMEZONE);
+  let targetDay: DateTime;
+  if (dateStr) {
+    const parsed = DateTime.fromFormat(dateStr, "dd.MM.yyyy", { zone: env.TIMEZONE });
+    if (!parsed.isValid) {
+      await interaction.editReply({ content: `Format data invalid: \`${dateStr}\`. Foloseste formatul dd.MM.yyyy (ex: 30.03.2026).` });
+      return;
+    }
+    targetDay = parsed;
+  } else {
+    targetDay = now.startOf("day");
+  }
+
+  const dayStart = targetDay.startOf("day").toJSDate();
+  const dayEnd = targetDay.endOf("day").toJSDate();
+
+  const entries = await prisma.timeEntry.findMany({
+    where: {
+      employeeId: employee.id,
+      clockInAt: { gte: dayStart, lte: dayEnd }
+    },
+    orderBy: { clockInAt: "desc" }
+  });
+
+  if (entries.length === 0) {
+    await interaction.editReply({ content: `Nu exista intrari de pontaj pentru <@${targetUser.id}> in data de ${formatDate(dayStart, env.TIMEZONE)}.` });
+    return;
+  }
+
+  const entry = entries[0]!;
+
+  if (shouldDelete) {
+    await prisma.timeEntryAudit.create({
+      data: {
+        timeEntryId: entry.id,
+        editedById: interaction.user.id,
+        fieldName: "DELETE",
+        oldValue: `clockIn=${formatTime(entry.clockInAt, env.TIMEZONE)}, clockOut=${entry.clockOutAt ? formatTime(entry.clockOutAt, env.TIMEZONE) : "OPEN"}, duration=${entry.durationMinutes ?? 0}min`,
+        newValue: "DELETED"
+      }
+    });
+
+    if (entry.sourceMessageId) {
+      const archiveChannel = asTextChannel(await client.channels.fetch(env.TIMESHEET_ARCHIVE_CHANNEL_ID).catch(() => null));
+      if (archiveChannel) {
+        const msg = await archiveChannel.messages.fetch(entry.sourceMessageId).catch(() => null);
+        if (msg) {
+          await msg.delete().catch(() => null);
+        }
+      }
+    }
+
+    await prisma.timeEntry.delete({ where: { id: entry.id } });
+
+    await postLog(client, new EmbedBuilder()
+      .setColor(Colors.Red)
+      .setTitle("Timesheet Entry Deleted")
+      .addFields(
+        { name: "Employee", value: `<@${targetUser.id}>`, inline: true },
+        { name: "Deleted by", value: `<@${interaction.user.id}>`, inline: true },
+        { name: "Date", value: formatDate(entry.clockInAt, env.TIMEZONE), inline: true },
+        { name: "Was", value: `${formatTime(entry.clockInAt, env.TIMEZONE)} - ${entry.clockOutAt ? formatTime(entry.clockOutAt, env.TIMEZONE) : "OPEN"}`, inline: false }
+      )
+      .setTimestamp()
+    );
+
+    await interaction.editReply({ content: `Intrarea de pontaj a lui <@${targetUser.id}> din ${formatDate(entry.clockInAt, env.TIMEZONE)} a fost stearsa.` });
+
+    const timesheetChannel = asTextChannel(await interaction.guild!.channels.fetch(env.TIMESHEET_CHANNEL_ID).catch(() => null));
+    if (timesheetChannel) {
+      await updateTimesheetPanel(client, timesheetChannel).catch(() => null);
+    }
+    return;
+  }
+
+  if (!clockInStr && !clockOutStr) {
+    await interaction.editReply({ content: "Trebuie sa specifici cel putin `clock-in`, `clock-out`, sau `delete`." });
+    return;
+  }
+
+  const updates: { clockInAt?: Date; clockOutAt?: Date; durationMinutes?: number; status?: TimeEntryStatus } = {};
+  const audits: { fieldName: string; oldValue: string; newValue: string }[] = [];
+
+  let newClockIn = entry.clockInAt;
+  let newClockOut = entry.clockOutAt;
+
+  if (clockInStr) {
+    const parsed = DateTime.fromFormat(clockInStr, "HH:mm", { zone: env.TIMEZONE });
+    if (!parsed.isValid) {
+      await interaction.editReply({ content: `Format clock-in invalid: \`${clockInStr}\`. Foloseste HH:mm (ex: 19:30).` });
+      return;
+    }
+    const newTime = targetDay.set({ hour: parsed.hour, minute: parsed.minute, second: 0, millisecond: 0 });
+    audits.push({ fieldName: "clockInAt", oldValue: formatTime(entry.clockInAt, env.TIMEZONE), newValue: clockInStr });
+    updates.clockInAt = newTime.toJSDate();
+    newClockIn = newTime.toJSDate();
+  }
+
+  if (clockOutStr) {
+    const parsed = DateTime.fromFormat(clockOutStr, "HH:mm", { zone: env.TIMEZONE });
+    if (!parsed.isValid) {
+      await interaction.editReply({ content: `Format clock-out invalid: \`${clockOutStr}\`. Foloseste HH:mm (ex: 23:00).` });
+      return;
+    }
+    const newTime = targetDay.set({ hour: parsed.hour, minute: parsed.minute, second: 0, millisecond: 0 });
+    audits.push({ fieldName: "clockOutAt", oldValue: entry.clockOutAt ? formatTime(entry.clockOutAt, env.TIMEZONE) : "OPEN", newValue: clockOutStr });
+    updates.clockOutAt = newTime.toJSDate();
+    updates.status = TimeEntryStatus.CLOSED;
+    newClockOut = newTime.toJSDate();
+  }
+
+  if (newClockOut) {
+    const dur = Math.max(1, Math.round((newClockOut.getTime() - newClockIn.getTime()) / 60000));
+    if (dur <= 0) {
+      await interaction.editReply({ content: "Clock-out trebuie sa fie dupa clock-in." });
+      return;
+    }
+    updates.durationMinutes = dur;
+  }
+
+  await prisma.timeEntry.update({ where: { id: entry.id }, data: updates });
+
+  for (const audit of audits) {
+    await prisma.timeEntryAudit.create({
+      data: { timeEntryId: entry.id, editedById: interaction.user.id, ...audit }
+    });
+  }
+
+  const updatedEntry = await prisma.timeEntry.findUnique({ where: { id: entry.id } });
+
+  if (updatedEntry && updatedEntry.clockOutAt) {
+    const logEmbed = new EmbedBuilder()
+      .setColor(Colors.Gold)
+      .setTitle("Clock Out (Edited)")
+      .addFields(
+        { name: "Employee", value: `<@${targetUser.id}>`, inline: true },
+        { name: "Edited by", value: `<@${interaction.user.id}>`, inline: true },
+        { name: "Interval", value: formatRange(updatedEntry.clockInAt, updatedEntry.clockOutAt, env.TIMEZONE), inline: false },
+        { name: "Total", value: `${durationToHuman(updatedEntry.durationMinutes ?? 0)} (${updatedEntry.durationMinutes} min)`, inline: false }
+      )
+      .setTimestamp();
+
+    await upsertTimesheetArchiveMessage(client, updatedEntry.id, updatedEntry.sourceMessageId ?? null, logEmbed);
+  }
+
+  await postLog(client, new EmbedBuilder()
+    .setColor(Colors.Orange)
+    .setTitle("Timesheet Entry Edited")
+    .addFields(
+      { name: "Employee", value: `<@${targetUser.id}>`, inline: true },
+      { name: "Edited by", value: `<@${interaction.user.id}>`, inline: true },
+      { name: "Changes", value: audits.map((a) => `**${a.fieldName}**: ${a.oldValue} → ${a.newValue}`).join("\n"), inline: false }
+    )
+    .setTimestamp()
+  );
+
+  const changesSummary = audits.map((a) => `${a.fieldName}: ${a.oldValue} → ${a.newValue}`).join(", ");
+  await interaction.editReply({ content: `Pontajul lui <@${targetUser.id}> din ${formatDate(entry.clockInAt, env.TIMEZONE)} a fost actualizat. (${changesSummary})` });
+
+  const timesheetChannel = asTextChannel(await interaction.guild!.channels.fetch(env.TIMESHEET_CHANNEL_ID).catch(() => null));
+  if (timesheetChannel) {
+    await updateTimesheetPanel(client, timesheetChannel).catch(() => null);
+  }
+}
+
+export async function handleTimesheetViewCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+  const targetUser = interaction.options.getUser("user") ?? interaction.user;
+  const period = interaction.options.getString("period") ?? "week";
+
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+  const employee = await prisma.employee.findUnique({ where: { discordUserId: targetUser.id } });
+  if (!employee) {
+    await interaction.editReply({ content: `<@${targetUser.id}> nu este un angajat inregistrat.` });
+    return;
+  }
+
+  const now = DateTime.now().setZone(env.TIMEZONE);
+  let rangeStart: DateTime;
+  let rangeEnd: DateTime;
+  let periodLabel: string;
+
+  switch (period) {
+    case "today":
+      rangeStart = now.startOf("day");
+      rangeEnd = now.endOf("day");
+      periodLabel = `Azi (${formatDate(rangeStart.toJSDate(), env.TIMEZONE)})`;
+      break;
+    case "month":
+      rangeStart = now.startOf("month");
+      rangeEnd = now.endOf("month");
+      periodLabel = `Luna curenta (${formatDate(rangeStart.toJSDate(), env.TIMEZONE)} - ${formatDate(rangeEnd.toJSDate(), env.TIMEZONE)})`;
+      break;
+    case "week":
+    default:
+      rangeStart = now.startOf("week");
+      rangeEnd = now.endOf("week");
+      periodLabel = `Saptamana curenta (${formatDate(rangeStart.toJSDate(), env.TIMEZONE)} - ${formatDate(rangeEnd.toJSDate(), env.TIMEZONE)})`;
+      break;
+  }
+
+  const entries = await prisma.timeEntry.findMany({
+    where: {
+      employeeId: employee.id,
+      clockInAt: { gte: rangeStart.toJSDate(), lte: rangeEnd.toJSDate() }
+    },
+    orderBy: { clockInAt: "asc" }
+  });
+
+  if (entries.length === 0) {
+    await interaction.editReply({ content: `Nu exista intrari de pontaj pentru <@${targetUser.id}> in perioada: ${periodLabel}.` });
+    return;
+  }
+
+  let totalMinutes = 0;
+  const lines = entries.map((entry) => {
+    const date = formatDate(entry.clockInAt, env.TIMEZONE);
+    const clockIn = formatTime(entry.clockInAt, env.TIMEZONE);
+    const clockOut = entry.clockOutAt ? formatTime(entry.clockOutAt, env.TIMEZONE) : "...";
+    const duration = entry.durationMinutes ? durationToHuman(entry.durationMinutes) : "in curs";
+    totalMinutes += entry.durationMinutes ?? 0;
+    const statusIcon = entry.status === "OPEN" ? "🟢" : "✅";
+    return `${statusIcon} **${date}** | ${clockIn} - ${clockOut} | ${duration}`;
+  });
+
+  const embed = new EmbedBuilder()
+    .setColor(Colors.Blurple)
+    .setTitle(`Pontaj: ${employee.displayName}`)
+    .setDescription(lines.join("\n"))
+    .addFields(
+      { name: "Total", value: `${durationToHuman(totalMinutes)} (${totalMinutes} min)`, inline: true },
+      { name: "Intrari", value: `${entries.length}`, inline: true }
+    )
+    .setFooter({ text: periodLabel })
+    .setTimestamp();
+
+  await interaction.editReply({ embeds: [embed] });
 }
