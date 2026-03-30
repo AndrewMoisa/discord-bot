@@ -6,6 +6,7 @@ import {
   EmbedBuilder,
   GuildMember,
   GuildTextBasedChannel,
+  MessageFlags,
 } from "discord.js";
 import { Prisma, TimeEntryStatus } from "@prisma/client";
 import { DateTime } from "luxon";
@@ -215,6 +216,8 @@ async function handleClockIn(client: Client, interaction: ButtonInteraction): Pr
     return;
   }
 
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
   const created = await prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT 1 FROM "Employee" WHERE id = ${access.employeeId} FOR UPDATE`;
 
@@ -242,7 +245,7 @@ async function handleClockIn(client: Client, interaction: ButtonInteraction): Pr
   });
 
   if (!created) {
-    await interaction.reply({ content: "Ai deja un pontaj activ. Foloseste Clock Out mai intai.", ephemeral: true });
+    await interaction.editReply({ content: "Ai deja un pontaj activ. Foloseste Clock Out mai intai." });
     return;
   }
 
@@ -256,9 +259,8 @@ async function handleClockIn(client: Client, interaction: ButtonInteraction): Pr
     .setTimestamp();
 
   await upsertTimesheetArchiveMessage(client, created.id, null, logEmbed);
-  await interaction.reply({
-    content: `Clock In confirmat la ${formatDiscordDate(created.clockInAt)}.\nStatus: pontaj activ.`,
-    ephemeral: true
+  await interaction.editReply({
+    content: `Clock In confirmat la ${formatDiscordDate(created.clockInAt)}.\nStatus: pontaj activ.`
   });
 
   const timesheetChannel = asTextChannel(await access.guild.channels.fetch(env.TIMESHEET_CHANNEL_ID));
@@ -277,14 +279,15 @@ async function handleClockOut(client: Client, interaction: ButtonInteraction): P
     return;
   }
 
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
   const openEntry = await prisma.timeEntry.findFirst({
     where: { employeeId: access.employeeId, status: TimeEntryStatus.OPEN }
   });
 
   if (!openEntry) {
-    await interaction.reply({
-      content: "Nu ai un pontaj activ de inchis. Foloseste Clock In pentru a incepe pontajul.",
-      ephemeral: true
+    await interaction.editReply({
+      content: "Nu ai un pontaj activ de inchis. Foloseste Clock In pentru a incepe pontajul."
     });
     return;
   }
@@ -302,13 +305,13 @@ async function handleClockOut(client: Client, interaction: ButtonInteraction): P
   });
 
   if (closed.count === 0) {
-    await interaction.reply({ content: "Intrarea de pontaj a fost deja inchisa. Da refresh si incearca din nou.", ephemeral: true });
+    await interaction.editReply({ content: "Intrarea de pontaj a fost deja inchisa. Da refresh si incearca din nou." });
     return;
   }
 
   const closedEntry = await prisma.timeEntry.findUnique({ where: { id: openEntry.id } });
   if (!closedEntry) {
-    await interaction.reply({ content: "Nu am putut incarca intrarea inchisa. Incearca din nou.", ephemeral: true });
+    await interaction.editReply({ content: "Nu am putut incarca intrarea inchisa. Incearca din nou." });
     return;
   }
 
@@ -323,9 +326,8 @@ async function handleClockOut(client: Client, interaction: ButtonInteraction): P
     .setTimestamp();
 
   await upsertTimesheetArchiveMessage(client, closedEntry.id, closedEntry.sourceMessageId ?? null, logEmbed);
-  await interaction.reply({
-    content: `Clock Out confirmat.\nInterval: ${formatRange(closedEntry.clockInAt, clockOutAt, env.TIMEZONE)}\nTotal: ${durationToHuman(durationMinutes)} (${durationMinutes} min).\nStatus: pontaj inchis.`,
-    ephemeral: true
+  await interaction.editReply({
+    content: `Clock Out confirmat.\nInterval: ${formatRange(closedEntry.clockInAt, clockOutAt, env.TIMEZONE)}\nTotal: ${durationToHuman(durationMinutes)} (${durationMinutes} min).\nStatus: pontaj inchis.`
   });
 
   const timesheetChannel = asTextChannel(await access.guild.channels.fetch(env.TIMESHEET_CHANNEL_ID));
